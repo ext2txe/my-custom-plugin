@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: My Custom Plugin - Simple Chat
- * Description: Adds a Simple Chat page and shortcode that sends user messages to a mock LLM response endpoint.
- * Version: 0.1.0
+ * Description: Adds a Simple Chat page and shortcode that sends user messages to OpenAI.
+ * Version: 0.1.2
  * Author: Local Dev
  */
 
@@ -13,6 +13,8 @@ if (!defined('ABSPATH')) {
 const MCP_SIMPLE_CHAT_PAGE_TITLE = 'Simple Chat';
 const MCP_SIMPLE_CHAT_PAGE_SLUG = 'simple-chat';
 const MCP_SIMPLE_CHAT_SHORTCODE = 'my_custom_simple_chat';
+const MCP_SIMPLE_CHAT_LEGACY_SHORTCODE = 'my_cusstom_simple_chat';
+const MCP_SIMPLE_CHAT_VERSION = '0.1.2';
 
 /**
  * Creates the Simple Chat page on activation.
@@ -48,7 +50,7 @@ function mcp_register_simple_chat_assets(): void
         'mcp-simple-chat',
         plugin_dir_url(__FILE__) . 'assets/simple-chat.js',
         [],
-        '0.1.0',
+        MCP_SIMPLE_CHAT_VERSION,
         true
     );
 
@@ -87,6 +89,134 @@ function mcp_render_simple_chat_shortcode(): string
     return (string) ob_get_clean();
 }
 add_shortcode(MCP_SIMPLE_CHAT_SHORTCODE, 'mcp_render_simple_chat_shortcode');
+add_shortcode(MCP_SIMPLE_CHAT_LEGACY_SHORTCODE, 'mcp_render_simple_chat_shortcode');
+
+/**
+ * Gets the OpenAI API key from a WordPress constant or environment variable.
+ *
+ * @return string
+ */
+function mcp_get_openai_api_key(): string
+{
+    if (defined('OPENAI_API_KEY') && is_string(OPENAI_API_KEY)) {
+        return trim(OPENAI_API_KEY);
+    }
+
+    $apiKey = getenv('OPENAI_API_KEY');
+
+    return is_string($apiKey) ? trim($apiKey) : '';
+}
+
+/**
+ * Gets the OpenAI model used for simple chat responses.
+ *
+ * @return string
+ */
+function mcp_get_openai_model(): string
+{
+    /**
+     * Filters the OpenAI model used by the simple chat shortcode.
+     *
+     * @param string $model OpenAI model name.
+     */
+    $model = apply_filters('mcp_simple_chat_openai_model', 'gpt-4o-mini');
+
+    return is_string($model) && trim($model) !== '' ? trim($model) : 'gpt-4o-mini';
+}
+
+/**
+ * Extracts plain response text from the OpenAI Responses API payload.
+ *
+ * @param array<string, mixed> $body Decoded OpenAI response.
+ * @return string
+ */
+function mcp_extract_openai_response_text(array $body): string
+{
+    if (isset($body['output_text']) && is_string($body['output_text'])) {
+        return trim($body['output_text']);
+    }
+
+    if (!isset($body['output']) || !is_array($body['output'])) {
+        return '';
+    }
+
+    $textParts = [];
+
+    foreach ($body['output'] as $outputItem) {
+        if (!is_array($outputItem) || !isset($outputItem['content']) || !is_array($outputItem['content'])) {
+            continue;
+        }
+
+        foreach ($outputItem['content'] as $contentItem) {
+            if (!is_array($contentItem) || !isset($contentItem['text']) || !is_string($contentItem['text'])) {
+                continue;
+            }
+
+            $textParts[] = $contentItem['text'];
+        }
+    }
+
+    return trim(implode("\n", $textParts));
+}
+
+/**
+ * Sends a message to OpenAI and returns the response text.
+ *
+ * @param string $message User message.
+ * @return string|WP_Error
+ */
+function mcp_send_message_to_openai(string $message)
+{
+    $apiKey = mcp_get_openai_api_key();
+
+    if ($apiKey === '') {
+        return new WP_Error(
+            'mcp_openai_api_key_missing',
+            'OpenAI API key is missing. Define OPENAI_API_KEY in wp-config.php or set the OPENAI_API_KEY environment variable.'
+        );
+    }
+
+    $response = wp_remote_post('https://api.openai.com/v1/responses', [
+        'timeout' => 30,
+        'headers' => [
+            'Authorization' => 'Bearer ' . $apiKey,
+            'Content-Type' => 'application/json',
+        ],
+        'body' => wp_json_encode([
+            'model' => mcp_get_openai_model(),
+            'input' => $message,
+        ]),
+    ]);
+
+    if (is_wp_error($response)) {
+        return $response;
+    }
+
+    $statusCode = wp_remote_retrieve_response_code($response);
+    $body = json_decode(wp_remote_retrieve_body($response), true);
+
+    if (!is_array($body)) {
+        return new WP_Error('mcp_openai_invalid_response', 'OpenAI returned an invalid response.');
+    }
+
+    if ($statusCode < 200 || $statusCode >= 300) {
+        $errorMessage = 'OpenAI request failed.';
+
+        if (isset($body['error']) && is_array($body['error']) && isset($body['error']['message']) && is_string($body['error']['message'])) {
+            $errorMessage = $body['error']['message'];
+        }
+
+        return new WP_Error('mcp_openai_request_failed', $errorMessage);
+    }
+
+    $responseText = mcp_extract_openai_response_text($body);
+
+    if ($responseText === '') {
+        return new WP_Error('mcp_openai_empty_response', 'OpenAI returned an empty response.');
+    }
+
+    return $responseText;
+}
 
 /**
  * Handles chat message requests.
@@ -100,8 +230,19 @@ function mcp_handle_simple_chat_message(): void
     $rawMessage = isset($_POST['message']) ? wp_unslash($_POST['message']) : '';
     $message = sanitize_textarea_field((string) $rawMessage);
 
-    $timestamp = wp_date('Y-m-d H:i:s');
-    $responseText = sprintf('[%s] %s', $timestamp, $message);
+    if ($message === '') {
+        wp_send_json_error([
+            'message' => 'Please enter a message.',
+        ], 400);
+    }
+
+    $responseText = mcp_send_message_to_openai($message);
+
+    if (is_wp_error($responseText)) {
+        wp_send_json_error([
+            'message' => $responseText->get_error_message(),
+        ], 500);
+    }
 
     wp_send_json_success([
         'response' => $responseText,

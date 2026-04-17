@@ -44,6 +44,11 @@
                         return;
                     }
 
+                    if (data && data.data && data.data.message) {
+                        response.value = data.data.message;
+                        return;
+                    }
+
                     response.value = 'Request failed.';
                 })
                 .catch(function () {
