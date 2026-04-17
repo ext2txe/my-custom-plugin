@@ -1,0 +1,102 @@
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Testing
+.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Project specific
+*.log
+.env
+.env.local
+config.local.json
+*.lock
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Qt/PySide generated files (if applicable)
+resources_rc.py
+output/*
+zips/
+tmpclaude-*
+
+# Highlighter extension saved settings
+highlighter/saved/
+.claude/
+listnavigator/*
+udemy_search/
+saved/*
+jobpostanalysis/samples/
+highlighter/samples/
+saved/
+history/
+
+.ddev/
+wp-admin/
+wp-includes/
+wp-content/plugins/
+wp-content/uploads/
+wp-content/themes/twenty*/
+wp-content/themes/index.php
+wp-*.php
+xmlrpc.php
+index.php
+
